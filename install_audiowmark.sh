@@ -11,7 +11,7 @@ echo "🔍 当前系统：$OS"
 if [ "$OS" == "Linux" ]; then
     echo "📦 安装 Ubuntu 构建依赖 ..."
     sudo apt update
-    sudo apt install -y git build-essential autoconf libtool \
+    sudo apt install -y git build-essential autoconf libtool pkg-config \
         libfftw3-dev libsndfile1-dev libgcrypt20-dev \
         libzita-resampler-dev libmpg123-dev lame wget curl
 elif [ "$OS" == "Darwin" ]; then
@@ -20,13 +20,13 @@ elif [ "$OS" == "Darwin" ]; then
         echo "❌ 未安装 Homebrew，请先安装：https://brew.sh/"
         exit 1
     fi
-    brew install fftw libsndfile libgcrypt zita-resampler mpg123 lame autoconf automake
+    brew install fftw libsndfile libgcrypt zita-resampler mpg123 lame autoconf automake pkg-config
 else
     echo "❌ 不支持的平台：$OS"
     exit 1
 fi
 
-# ⚙️ 安装最新版 automake（Ubuntu Only）
+# ⚙️ 安装最新版 automake（仅 Linux）
 if [ "$OS" == "Linux" ]; then
     echo "⬇️ 安装 automake 1.16.5 ..."
     cd /tmp
