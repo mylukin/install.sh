@@ -372,7 +372,6 @@ global
     daemon
 
     # 默认SSL配置
-    ssl-default-bind-options no-sslv3 no-tlsv10 no-tlsv11
     ssl-default-bind-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
     ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305
     tune.ssl.default-dh-param 2048
@@ -402,10 +401,6 @@ frontend https-in
     acl is_oai_host hdr(host) -i ${API_DOMAIN}
     use_backend oai if is_oai_host
 
-    # WebSocket流量判断
-    acl is_websocket hdr(Upgrade) -i WebSocket
-    use_backend v2ray if is_websocket
-
     # 将 HTTP 流量发给 web 后端
     use_backend web if HTTP
     # 将其他流量发给 v2ray 后端
@@ -415,12 +410,7 @@ backend web
     server server1 127.0.0.1:80 check
 
 backend v2ray
-    acl is_ws hdr(Upgrade) -i WebSocket
-    # 如果是 WebSocket 请求，设置必要的头部保持连接
-    http-request set-header Connection upgrade if is_ws
-    http-request set-header Upgrade WebSocket if is_ws
     server server1 127.0.0.1:${V2RAY_PORT} check
-    option forwardfor
 
 backend oai
     server server1 127.0.0.1:8443 ssl verify none
@@ -439,7 +429,6 @@ global
     daemon
 
     # 默认SSL配置
-    ssl-default-bind-options no-sslv3 no-tlsv10 no-tlsv11
     ssl-default-bind-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
     ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305
     tune.ssl.default-dh-param 2048
@@ -466,10 +455,6 @@ frontend https-in
     tcp-request inspect-delay 5s
     tcp-request content accept if HTTP
 
-    # WebSocket流量判断
-    acl is_websocket hdr(Upgrade) -i WebSocket
-    use_backend v2ray if is_websocket
-
     # 将 HTTP 流量发给 web 后端
     use_backend web if HTTP
     # 将其他流量发给 v2ray 后端
@@ -479,12 +464,7 @@ backend web
     server server1 127.0.0.1:80 check
 
 backend v2ray
-    acl is_ws hdr(Upgrade) -i WebSocket
-    # 如果是 WebSocket 请求，设置必要的头部保持连接
-    http-request set-header Connection upgrade if is_ws
-    http-request set-header Upgrade WebSocket if is_ws
     server server1 127.0.0.1:${V2RAY_PORT} check
-    option forwardfor
 EOF
     fi
 
