@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Remote Work Space</title>
+  <!-- 添加网站图标 -->
+  <link rel="icon"
+    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='3' width='20' height='14' rx='2' ry='2'%3E%3C/rect%3E%3Cline x1='8' y1='21' x2='16' y2='21'%3E%3C/line%3E%3Cline x1='12' y1='17' x2='12' y2='21'%3E%3C/line%3E%3C/svg%3E"
+    type="image/svg+xml">
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com?v=3.4.0"></script>
+  <!-- Vue 3 (production) -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <!-- 自定义Tailwind配置 -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              200: '#bfdbfe',
+              300: '#93c5fd',
+              400: '#60a5fa',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              800: '#1e40af',
+              900: '#1e3a8a',
+            }
+          },
+          animation: {
+            'float': 'float 3s ease-in-out infinite',
+            'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+          },
+          keyframes: {
+            float: {
+              '0%, 100%': { transform: 'translateY(0)' },
+              '50%': { transform: 'translateY(-10px)' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- 预加载SVG图标 -->
+  <script>
+    window.LucideIcons = {
+      monitor: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>'
+    };
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(to bottom, #f8fafc, #f1f5f9);
+    }
+
+    .fade-in {
+      animation: fadeIn 1s ease-in;
+    }
+
+    @keyframes fadeIn {
+      0% {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .stagger-fade-in>* {
+      opacity: 0;
+      animation: staggerFadeIn 0.5s ease-out forwards;
+    }
+
+    .stagger-fade-in>*:nth-child(1) {
+      animation-delay: 0.1s;
+    }
+
+    .stagger-fade-in>*:nth-child(2) {
+      animation-delay: 0.3s;
+    }
+
+    .stagger-fade-in>*:nth-child(3) {
+      animation-delay: 0.5s;
+    }
+
+    @keyframes staggerFadeIn {
+      0% {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .gradient-text {
+      background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .glass-card {
+      background: rgba(255, 255, 255, 0.7);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
+    }
+
+    .svg-shadow {
+      filter: drop-shadow(0 10px 15px rgba(59, 130, 246, 0.2));
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app" class="min-h-screen flex flex-col relative overflow-hidden">
+    <!-- 背景元素 -->
+    <div class="fixed inset-0 -z-10 overflow-hidden">
+      <div
+        class="absolute top-0 -left-4 w-96 h-96 bg-primary-100 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse-slow">
+      </div>
+      <div
+        class="absolute bottom-0 right-0 w-96 h-96 bg-primary-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse-slow">
+      </div>
+      <div
+        class="absolute top-1/4 right-1/4 w-[40rem] h-[40rem] bg-primary-50 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse-slow">
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="flex-grow flex flex-col items-center justify-center px-4 py-8 md:py-16">
+      <!-- Logo和标题区域 -->
+      <div class="text-center mb-16 relative">
+        <!-- 装饰性光环效果 -->
+        <div
+          class="absolute -inset-4 bg-gradient-to-r from-primary-100 via-primary-50 to-primary-100 rounded-full blur-2xl opacity-30">
+        </div>
+        <div
+          class="absolute -inset-8 bg-gradient-to-r from-primary-200 via-white to-primary-200 rounded-full blur-3xl opacity-20 animate-pulse-slow">
+        </div>
+
+        <!-- Logo容器 -->
+        <div class="relative">
+          <div
+            class="inline-flex items-center justify-center p-4 bg-gradient-to-b from-white to-primary-50 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-500 group">
+            <!-- 内部光晕效果 -->
+            <div
+              class="absolute inset-0 bg-white rounded-2xl blur opacity-60 group-hover:opacity-80 transition-opacity duration-500">
+            </div>
+            <!-- Logo图片 -->
+            <div class="relative w-20 h-20 rounded-xl overflow-hidden shadow-inner">
+              <img src="./logo.jpg"
+                class="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500"
+                alt="Logo">
+            </div>
+          </div>
+        </div>
+
+        <!-- 标题 -->
+        <h1
+          class="mt-8 text-3xl md:text-4xl font-bold bg-gradient-to-r from-primary-600 via-primary-500 to-primary-600 bg-clip-text text-transparent tracking-tight">
+          Remote Work Space</h1>
+        <p class="mt-4 text-gray-600 max-w-md mx-auto">
+          Your Gateway to Seamless Remote Work Experience
+        </p>
+      </div>
+
+      <div class="max-w-6xl w-full grid md:grid-cols-2 gap-12 items-center">
+        <!-- 文字部分 -->
+        <div class="order-2 md:order-1 text-center md:text-left stagger-fade-in">
+          <h2 class="text-4xl md:text-6xl font-extrabold mb-6 gradient-text leading-tight">Work From Anywhere, Achieve
+            Everywhere</h2>
+
+          <p class="text-xl text-gray-600 mb-8 max-w-lg mx-auto md:mx-0">Embrace the freedom of remote work while
+            maintaining perfect work-life balance.</p>
+
+          <!-- 统计数据 -->
+          <div class="mt-12 grid grid-cols-3 gap-6">
+            <div class="glass-card p-6 rounded-2xl hover:shadow-lg transition-shadow duration-300">
+              <div
+                class="text-4xl font-bold text-primary-600 mb-2 bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent">
+                73%</div>
+              <div class="text-sm text-gray-600 font-medium">Productivity Boost</div>
+            </div>
+            <div class="glass-card p-6 rounded-2xl hover:shadow-lg transition-shadow duration-300">
+              <div
+                class="text-4xl font-bold text-primary-600 mb-2 bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent">
+                4.5h</div>
+              <div class="text-sm text-gray-600 font-medium">Saved Weekly</div>
+            </div>
+            <div class="glass-card p-6 rounded-2xl hover:shadow-lg transition-shadow duration-300">
+              <div
+                class="text-4xl font-bold text-primary-600 mb-2 bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent">
+                91%</div>
+              <div class="text-sm text-gray-600 font-medium">Satisfaction</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 插图部分 -->
+        <div class="order-1 md:order-2 fade-in">
+          <div
+            class="illustration-container animate-float svg-shadow bg-white bg-opacity-50 p-8 rounded-3xl overflow-hidden relative">
+            <!-- 渐变边框和背景效果 -->
+            <div class="absolute inset-0 bg-gradient-to-br from-primary-100/40 to-primary-300/30 backdrop-blur-sm">
+            </div>
+            <!-- 内部阴影效果 -->
+            <div class="absolute inset-0 shadow-inner pointer-events-none"></div>
+            <!-- 图片容器 -->
+            <div class="relative p-6">
+              <img src="./logo.jpg" alt="Illustration"
+                class="w-full h-full object-contain rounded-xl max-w-sm mx-auto mix-blend-multiply" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- 服务特性部分 -->
+    <section class="py-24 bg-white bg-opacity-70">
+      <div class="container mx-auto px-4">
+        <h2 class="text-4xl font-bold text-center mb-16 gradient-text">The Ultimate Remote Work Experience</h2>
+
+        <div class="grid md:grid-cols-3 gap-8">
+          <div
+            class="bg-white rounded-2xl shadow-lg p-8 transition-all duration-300 hover:-translate-y-2 hover:shadow-xl">
+            <div class="w-16 h-16 rounded-2xl bg-primary-100 flex items-center justify-center mb-6">
+              <span class="text-3xl text-primary-600">🌐</span>
+            </div>
+            <h3 class="text-2xl font-semibold mb-4">Work Anywhere</h3>
+            <p class="text-gray-600 text-lg">Freedom to work from home, coffee shops, or anywhere with an internet
+              connection.
+            </p>
+          </div>
+
+          <div
+            class="bg-white rounded-2xl shadow-lg p-8 transition-all duration-300 hover:-translate-y-2 hover:shadow-xl">
+            <div class="w-16 h-16 rounded-2xl bg-primary-100 flex items-center justify-center mb-6">
+              <span class="text-3xl text-primary-600">⏰</span>
+            </div>
+            <h3 class="text-2xl font-semibold mb-4">Flexible Schedule</h3>
+            <p class="text-gray-600 text-lg">Set your own hours and work when you're most productive.</p>
+          </div>
+
+          <div
+            class="bg-white rounded-2xl shadow-lg p-8 transition-all duration-300 hover:-translate-y-2 hover:shadow-xl">
+            <div class="w-16 h-16 rounded-2xl bg-primary-100 flex items-center justify-center mb-6">
+              <span class="text-3xl text-primary-600">🧘</span>
+            </div>
+            <h3 class="text-2xl font-semibold mb-4">Better Balance</h3>
+            <p class="text-gray-600 text-lg">More time for family, hobbies, and personal growth while achieving career
+              goals.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="w-full py-8 bg-gray-50 border-t border-gray-200">
+      <div class="container mx-auto px-4 text-center">
+        <p class="text-gray-500">Copyright © 2021-Present atmy.work</p>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    const { createApp } = Vue
+
+    createApp({
+      data() {
+        return {
+          monitorIcon: window.LucideIcons.monitor
+        }
+      }
+    }).mount('#app')
+  </script>
+</body>
+
+</html>
