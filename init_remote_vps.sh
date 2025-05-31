@@ -29,6 +29,7 @@ usage() {
   echo "  -p V2RAY_PORT   : V2Ray 监听端口 (环境变量: V2RAY_PORT, 默认: 666)"
   echo "  -i DNSPOD_ID    : DNSPod ID (环境变量: DP_Id, 必需)"
   echo "  -t DNSPOD_TOKEN : DNSPod Token (环境变量: DP_Key, 必需)"
+  echo "  -w WEBHOOK_URL  : Webhook通知地址 (环境变量: WEBHOOK_URL, 可选)"
   echo "  -s, --status    : 显示已安装服务的配置信息"
   echo "  -h, --help      : 显示此帮助信息"
   exit 1
@@ -244,6 +245,12 @@ show_installation_summary() {
     echo "│ 备份脚本:   /root/backup.sh                            │"
     echo "│ 恢复脚本:   /root/restore.sh                           │"
     echo "│ 监控脚本:   /root/monitor.sh                           │"
+    if [ -n "$WEBHOOK_URL" ]; then
+        echo "│ Webhook通知: 已配置                                    │"
+        echo "│ 测试通知:   /root/test_webhook.sh                      │"
+    else
+        echo "│ Webhook通知: 未配置                                    │"
+    fi
     echo "│ 查看配置:   $0 --status                        │"
     echo "└─────────────────────────────────────────────────────────┘"
     echo
@@ -253,7 +260,18 @@ show_installation_summary() {
     echo "   查看日志:     journalctl -u v2ray|nginx|haproxy|wg-quick@wg0 -f"
     echo "   备份配置:     /root/backup.sh"
     echo "   监控检查:     /root/monitor.sh"
+    if [ -n "$WEBHOOK_URL" ]; then
+        echo "   测试通知:     /root/test_webhook.sh"
+    fi
     echo
+    if [ -n "$WEBHOOK_URL" ]; then
+        echo "🔔 Webhook通知说明:"
+        echo "   - 服务异常时会自动发送通知"
+        echo "   - SSL证书即将过期时会发送提醒"
+        echo "   - 支持Slack、Discord、企业微信等格式"
+        echo "   - 使用 /root/test_webhook.sh 测试通知功能"
+        echo
+    fi
     echo "📞 如有问题，请检查日志或重新运行安装脚本"
     echo "═══════════════════════════════════════════════════════════"
 }
@@ -298,6 +316,7 @@ get_required_inputs() {
 DEFAULT_MAIN_DOMAIN=""
 DEFAULT_API_DOMAIN=""
 DEFAULT_V2RAY_PORT=666
+DEFAULT_WEBHOOK_URL=""
 
 # 从环境变量读取 (如果存在)
 MAIN_DOMAIN="${MAIN_DOMAIN:-${DEFAULT_MAIN_DOMAIN}}"
@@ -305,15 +324,17 @@ API_DOMAIN="${API_DOMAIN:-${DEFAULT_API_DOMAIN}}"
 V2RAY_PORT="${V2RAY_PORT:-${DEFAULT_V2RAY_PORT}}"
 DNSPOD_ID="${DP_Id:-}"
 DNSPOD_TOKEN="${DP_Key:-}"
+WEBHOOK_URL="${WEBHOOK_URL:-${DEFAULT_WEBHOOK_URL}}"
 
 # 解析命令行参数 (会覆盖环境变量和默认值)
-while getopts ":m:a:p:i:t:sh-:" opt; do
+while getopts ":m:a:p:i:t:w:sh-:" opt; do
   case ${opt} in
     m ) MAIN_DOMAIN="$OPTARG" ;;
     a ) API_DOMAIN="$OPTARG" ;;
     p ) V2RAY_PORT="$OPTARG" ;;
     i ) DNSPOD_ID="$OPTARG" ;;
     t ) DNSPOD_TOKEN="$OPTARG" ;;
+    w ) WEBHOOK_URL="$OPTARG" ;;
     s ) show_service_status; exit 0 ;;
     h ) usage ;;
     - ) case "${OPTARG}" in
@@ -339,8 +360,8 @@ install_dependencies() {
     log_info "更新软件包列表..."
     apt update
 
-    log_info "安装基础软件包 (包含 mailutils)..."
-    apt install -y curl wget git unzip socat cron ufw mailutils
+    log_info "安装基础软件包..."
+    apt install -y curl wget git unzip socat cron ufw
 
     # 配置防火墙
     log_info "配置防火墙..."
@@ -886,7 +907,60 @@ create_monitor_script() {
     cat > /root/monitor.sh << EOF
 #!/bin/bash
 SERVICES=(${SERVICES_LIST})
-EMAIL="mylukin@gmail.com"  # 使用您的邮箱地址
+WEBHOOK_URL="${WEBHOOK_URL}"
+HOSTNAME=\$(hostname)
+SERVER_IP=\$(curl -s http://ipinfo.io/ip 2>/dev/null || echo "Unknown")
+
+# Webhook通知函数
+send_webhook_notification() {
+    local service="\$1"
+    local status="\$2"
+    local message="\$3"
+    
+    if [ -n "\$WEBHOOK_URL" ]; then
+        local payload="{
+            \"text\": \"服务器警报\",
+            \"attachments\": [
+                {
+                    \"color\": \"danger\",
+                    \"fields\": [
+                        {
+                            \"title\": \"服务器\",
+                            \"value\": \"\$HOSTNAME (\$SERVER_IP)\",
+                            \"short\": true
+                        },
+                        {
+                            \"title\": \"服务\",
+                            \"value\": \"\$service\",
+                            \"short\": true
+                        },
+                        {
+                            \"title\": \"状态\",
+                            \"value\": \"\$status\",
+                            \"short\": true
+                        },
+                        {
+                            \"title\": \"时间\",
+                            \"value\": \"\$(date)\",
+                            \"short\": true
+                        },
+                        {
+                            \"title\": \"详情\",
+                            \"value\": \"\$message\",
+                            \"short\": false
+                        }
+                    ]
+                }
+            ]
+        }"
+        
+        curl -X POST \\
+            -H "Content-Type: application/json" \\
+            -d "\$payload" \\
+            "\$WEBHOOK_URL" \\
+            --silent --show-error --fail >/dev/null 2>&1
+    fi
+}
 
 echo "服务状态检查开始于 \$(date)"
 echo "======================="
@@ -899,9 +973,10 @@ for SERVICE in "\${SERVICES[@]}"; do
         systemctl restart \${SERVICE}
         if systemctl is-active --quiet \${SERVICE}; then
             echo "  ✅ \${SERVICE} 已成功重启"
+            send_webhook_notification "\${SERVICE}" "已重启" "服务 \${SERVICE} 检测到异常后已自动重启成功"
         else
             echo "  ❌ \${SERVICE} 重启失败"
-            echo "服务 \${SERVICE} 故障，请检查" | mail -s "服务器警报: \${SERVICE} 故障" \${EMAIL}
+            send_webhook_notification "\${SERVICE}" "重启失败" "服务 \${SERVICE} 检测到异常，尝试重启但失败，请人工检查"
         fi
     fi
 done
@@ -918,9 +993,24 @@ if [ -n "\$CERT_END_DATE" ]; then
     if [ \${DAYS_LEFT} -lt 15 ]; then
         echo "⚠️ 证书即将过期，尝试更新..."
         /root/.acme.sh/acme.sh --cron --home "/root/.acme.sh"
+        
+        # 检查更新是否成功
+        NEW_CERT_END_DATE=\$(openssl x509 -enddate -noout -in ${SSL_DIR}/\${DOMAIN}.crt 2>/dev/null | cut -d= -f2)
+        if [ "\$NEW_CERT_END_DATE" != "\$CERT_END_DATE" ]; then
+            send_webhook_notification "SSL证书" "已更新" "SSL证书即将过期（剩余\${DAYS_LEFT}天），已自动更新成功"
+        else
+            send_webhook_notification "SSL证书" "更新失败" "SSL证书即将过期（剩余\${DAYS_LEFT}天），自动更新失败，请人工检查"
+        fi
+    elif [ \${DAYS_LEFT} -lt 30 ]; then
+        echo "⚠️ 证书将在30天内过期"
+        # 30天内过期时发送一次提醒，避免频繁通知
+        if [ \${DAYS_LEFT} -eq 29 ]; then
+            send_webhook_notification "SSL证书" "即将过期" "SSL证书将在\${DAYS_LEFT}天后过期，请注意"
+        fi
     fi
 else
     echo "⚠️ 无法检查证书状态"
+    send_webhook_notification "SSL证书" "检查失败" "无法检查SSL证书状态，请人工检查证书文件"
 fi
 
 echo "======================="
@@ -928,6 +1018,72 @@ echo "检查完成于 \$(date)"
 EOF
 
     chmod +x /root/monitor.sh
+    
+    if [ -n "$WEBHOOK_URL" ]; then
+        log_info "监控脚本已配置Webhook通知: ${WEBHOOK_URL}"
+        
+        # 创建webhook测试脚本
+        cat > /root/test_webhook.sh << EOF
+#!/bin/bash
+WEBHOOK_URL="${WEBHOOK_URL}"
+HOSTNAME=\$(hostname)
+SERVER_IP=\$(curl -s http://ipinfo.io/ip 2>/dev/null || echo "Unknown")
+
+if [ -z "\$WEBHOOK_URL" ]; then
+    echo "错误: 未配置Webhook URL"
+    exit 1
+fi
+
+echo "正在发送测试通知到 Webhook..."
+
+payload="{
+    \"text\": \"🧪 服务器监控测试通知\",
+    \"attachments\": [
+        {
+            \"color\": \"good\",
+            \"fields\": [
+                {
+                    \"title\": \"服务器\",
+                    \"value\": \"\$HOSTNAME (\$SERVER_IP)\",
+                    \"short\": true
+                },
+                {
+                    \"title\": \"状态\",
+                    \"value\": \"测试通知\",
+                    \"short\": true
+                },
+                {
+                    \"title\": \"时间\",
+                    \"value\": \"\$(date)\",
+                    \"short\": true
+                },
+                {
+                    \"title\": \"说明\",
+                    \"value\": \"这是一条测试通知，如果您收到此消息，说明Webhook配置正确\",
+                    \"short\": false
+                }
+            ]
+        }
+    ]
+}"
+
+if curl -X POST \\
+    -H "Content-Type: application/json" \\
+    -d "\$payload" \\
+    "\$WEBHOOK_URL" \\
+    --silent --show-error --fail; then
+    echo "✅ 测试通知发送成功！"
+else
+    echo "❌ 测试通知发送失败，请检查Webhook URL是否正确"
+    exit 1
+fi
+EOF
+        
+        chmod +x /root/test_webhook.sh
+        log_info "Webhook测试脚本已创建: /root/test_webhook.sh"
+    else
+        log_info "监控脚本已创建，但未配置Webhook通知"
+    fi
 }
 
 # 主安装流程
