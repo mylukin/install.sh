@@ -22,12 +22,15 @@ log_error() {
 
 # 使用说明函数
 usage() {
-  echo "用法: $0 [-m MAIN_DOMAIN] [-a API_DOMAIN] [-p V2RAY_PORT] [-i DNSPOD_ID] [-t DNSPOD_TOKEN]"
-  echo "  -m : 主域名 (环境变量: MAIN_DOMAIN, 必需)"
-  echo "  -a : API 域名 (环境变量: API_DOMAIN, 可选)"
-  echo "  -p : V2Ray 监听端口 (环境变量: V2RAY_PORT, 默认: 666)"
-  echo "  -i : DNSPod ID (环境变量: DP_Id, 必需)"
-  echo "  -t : DNSPod Token (环境变量: DP_Key, 必需)"
+  echo "用法: $0 [选项]"
+  echo "选项:"
+  echo "  -m MAIN_DOMAIN  : 主域名 (环境变量: MAIN_DOMAIN, 必需)"
+  echo "  -a API_DOMAIN   : API 域名 (环境变量: API_DOMAIN, 可选)"
+  echo "  -p V2RAY_PORT   : V2Ray 监听端口 (环境变量: V2RAY_PORT, 默认: 666)"
+  echo "  -i DNSPOD_ID    : DNSPod ID (环境变量: DP_Id, 必需)"
+  echo "  -t DNSPOD_TOKEN : DNSPod Token (环境变量: DP_Key, 必需)"
+  echo "  -s, --status    : 显示已安装服务的配置信息"
+  echo "  -h, --help      : 显示此帮助信息"
   exit 1
 }
 
@@ -77,7 +80,183 @@ check_and_enable_bbr() {
     fi
 }
 
-# 交互式获取域名和DNSPod凭据
+# 显示服务状态和配置信息
+show_service_status() {
+    log_info "=== 服务状态和配置信息 ==="
+    echo
+    
+    # 检查V2Ray状态
+    if systemctl is-active --quiet v2ray 2>/dev/null; then
+        log_info "🟢 V2Ray服务状态: 运行中"
+        show_v2ray_config
+    elif systemctl list-unit-files | grep -q "v2ray"; then
+        log_warn "🟡 V2Ray服务状态: 已安装但未运行"
+        show_v2ray_config
+    else
+        log_warn "⚪ V2Ray: 未安装"
+    fi
+    
+    echo
+    
+    # 检查WireGuard状态
+    if systemctl is-active --quiet wg-quick@wg0 2>/dev/null; then
+        log_info "🟢 WireGuard服务状态: 运行中"
+        show_wireguard_config
+    elif systemctl list-unit-files | grep -q "wg-quick@wg0"; then
+        log_warn "🟡 WireGuard服务状态: 已安装但未运行"
+        show_wireguard_config
+    else
+        log_warn "⚪ WireGuard: 未安装"
+    fi
+    
+    echo
+    
+    # 检查HAProxy状态
+    if systemctl is-active --quiet haproxy 2>/dev/null; then
+        log_info "🟢 HAProxy服务状态: 运行中"
+    elif systemctl list-unit-files | grep -q "haproxy"; then
+        log_warn "🟡 HAProxy服务状态: 已安装但未运行"
+    else
+        log_warn "⚪ HAProxy: 未安装"
+    fi
+    
+    # 检查Nginx状态
+    if systemctl is-active --quiet nginx 2>/dev/null; then
+        log_info "🟢 Nginx服务状态: 运行中"
+    elif systemctl list-unit-files | grep -q "nginx"; then
+        log_warn "🟡 Nginx服务状态: 已安装但未运行"
+    else
+        log_warn "⚪ Nginx: 未安装"
+    fi
+    
+    echo
+    log_info "=== 状态检查完成 ==="
+}
+
+# 显示V2Ray配置信息
+show_v2ray_config() {
+    local config_file="/usr/local/etc/v2ray/config.json"
+    local main_domain
+    
+    if [ -f "$config_file" ]; then
+        # 从Nginx配置中获取域名
+        if [ -f "/etc/nginx/sites-available/default" ]; then
+            main_domain=$(grep "server_name" /etc/nginx/sites-available/default | awk '{print $2}' | tr -d ';' | head -1)
+        fi
+        
+        # 如果没有从Nginx获取到，尝试从全局变量获取
+        if [ -z "$main_domain" ] && [ -n "$MAIN_DOMAIN" ]; then
+            main_domain="$MAIN_DOMAIN"
+        fi
+        
+        # 从配置文件中提取UUID密码
+        local uuid_password
+        uuid_password=$(grep -A 5 '"clients"' "$config_file" | grep '"password"' | cut -d'"' -f4 | head -1)
+        
+        if [ -n "$uuid_password" ] && [ -n "$main_domain" ]; then
+            echo "┌─────────────────────────────────────────────────────────┐"
+            echo "│                    V2Ray Trojan 配置                    │"
+            echo "├─────────────────────────────────────────────────────────┤"
+            echo "│ 服务器地址: ${main_domain}"
+            echo "│ 端口:      443"
+            echo "│ 密码:      ${uuid_password}"
+            echo "│ 协议:      Trojan"
+            echo "│ 传输:      TCP"
+            echo "│ TLS:       是"
+            echo "│ 跳过证书验证: 否"
+            echo "└─────────────────────────────────────────────────────────┘"
+            echo
+            echo "📱 客户端配置示例:"
+            echo "   - 类型: Trojan"
+            echo "   - 地址: ${main_domain}"
+            echo "   - 端口: 443"
+            echo "   - 密码: ${uuid_password}"
+            echo "   - SNI: ${main_domain}"
+        else
+            log_warn "无法读取V2Ray配置信息"
+        fi
+    else
+        log_warn "V2Ray配置文件不存在"
+    fi
+}
+
+# 显示WireGuard配置信息
+show_wireguard_config() {
+    local client_config="/root/wireguard-clients/client.conf"
+    local server_config="/etc/wireguard/wg0.conf"
+    
+    if [ -f "$client_config" ]; then
+        echo "┌─────────────────────────────────────────────────────────┐"
+        echo "│                   WireGuard VPN 配置                    │"
+        echo "├─────────────────────────────────────────────────────────┤"
+        echo "│ 客户端配置文件: /root/wireguard-clients/client.conf     │"
+        echo "│ 服务端IP范围:   10.0.0.1/24                           │"
+        echo "│ 客户端IP:       10.0.0.2/24                           │"
+        echo "│ 监听端口:       51820                                  │"
+        echo "└─────────────────────────────────────────────────────────┘"
+        echo
+        echo "📋 客户端配置内容:"
+        echo "────────────────────────────────────────────────────────────"
+        cat "$client_config"
+        echo "────────────────────────────────────────────────────────────"
+        echo
+        echo "📱 使用方法:"
+        echo "   1. 下载客户端配置文件: /root/wireguard-clients/client.conf"
+        echo "   2. 导入到WireGuard客户端应用"
+        echo "   3. 连接即可使用VPN"
+    elif [ -f "$server_config" ]; then
+        echo "┌─────────────────────────────────────────────────────────┐"
+        echo "│                   WireGuard VPN 配置                    │"
+        echo "├─────────────────────────────────────────────────────────┤"
+        echo "│ 状态: 已安装服务端，但未生成客户端配置                    │"
+        echo "│ 服务端配置: /etc/wireguard/wg0.conf                    │"
+        echo "│ 监听端口:   51820                                      │"
+        echo "└─────────────────────────────────────────────────────────┘"
+        echo
+        echo "💡 如需生成客户端配置，请重新运行安装脚本"
+    else
+        log_warn "WireGuard配置文件不存在"
+    fi
+}
+
+# 显示安装完成后的配置信息汇总
+show_installation_summary() {
+    echo
+    echo "🎉 =============================================== 🎉"
+    echo "🎉           安装完成！配置信息汇总               🎉"
+    echo "🎉 =============================================== 🎉"
+    echo
+    
+    # 显示V2Ray配置
+    if systemctl is-active --quiet v2ray 2>/dev/null; then
+        show_v2ray_config
+    fi
+    
+    # 显示WireGuard配置
+    if systemctl is-active --quiet wg-quick@wg0 2>/dev/null; then
+        show_wireguard_config
+    fi
+    
+    # 显示管理脚本信息
+    echo "┌─────────────────────────────────────────────────────────┐"
+    echo "│                      管理工具                           │"
+    echo "├─────────────────────────────────────────────────────────┤"
+    echo "│ 备份脚本:   /root/backup.sh                            │"
+    echo "│ 恢复脚本:   /root/restore.sh                           │"
+    echo "│ 监控脚本:   /root/monitor.sh                           │"
+    echo "│ 查看配置:   $0 --status                        │"
+    echo "└─────────────────────────────────────────────────────────┘"
+    echo
+    echo "🔧 常用命令:"
+    echo "   查看服务状态: systemctl status v2ray|nginx|haproxy|wg-quick@wg0"
+    echo "   重启服务:     systemctl restart v2ray|nginx|haproxy|wg-quick@wg0"
+    echo "   查看日志:     journalctl -u v2ray|nginx|haproxy|wg-quick@wg0 -f"
+    echo "   备份配置:     /root/backup.sh"
+    echo "   监控检查:     /root/monitor.sh"
+    echo
+    echo "📞 如有问题，请检查日志或重新运行安装脚本"
+    echo "═══════════════════════════════════════════════════════════"
+}
 get_required_inputs() {
     # 获取主域名
     if [ -z "${MAIN_DOMAIN}" ]; then
@@ -128,14 +307,20 @@ DNSPOD_ID="${DP_Id:-}"
 DNSPOD_TOKEN="${DP_Key:-}"
 
 # 解析命令行参数 (会覆盖环境变量和默认值)
-while getopts ":m:a:p:i:t:h" opt; do
+while getopts ":m:a:p:i:t:sh-:" opt; do
   case ${opt} in
     m ) MAIN_DOMAIN="$OPTARG" ;;
     a ) API_DOMAIN="$OPTARG" ;;
     p ) V2RAY_PORT="$OPTARG" ;;
     i ) DNSPOD_ID="$OPTARG" ;;
     t ) DNSPOD_TOKEN="$OPTARG" ;;
+    s ) show_service_status; exit 0 ;;
     h ) usage ;;
+    - ) case "${OPTARG}" in
+          status) show_service_status; exit 0 ;;
+          help) usage ;;
+          *) log_error "无效的长选项: --$OPTARG"; usage ;;
+        esac ;;
     \\? ) log_error "无效选项: -$OPTARG"; usage ;;
     : ) log_error "选项 -$OPTARG 需要一个参数。"; usage ;;
   esac
@@ -415,17 +600,20 @@ EOF
     # 检查V2Ray是否启动成功
     if systemctl is-active --quiet v2ray; then
         log_info "V2Ray启动成功"
+        
+        # 保存配置信息到文件供后续查看
+        cat > /root/v2ray-info.txt << EOF
+V2Ray Trojan配置信息:
+服务器: ${MAIN_DOMAIN}
+端口: 443
+密码: ${UUID}
+协议: Trojan
+EOF
+        log_info "V2Ray配置信息已保存到 /root/v2ray-info.txt"
     else
         log_error "V2Ray启动失败"
         exit 1
     fi
-    
-    log_info "V2Ray Trojan配置信息:"
-    echo "============================"
-    echo "服务器: ${MAIN_DOMAIN}"
-    echo "端口: 443"
-    echo "密码: ${UUID}"
-    echo "============================"
 }
 
 # 安装并配置Nginx
@@ -632,7 +820,20 @@ AllowedIPs = 0.0.0.0/0
 PersistentKeepalive = 25
 EOF
 
-        log_info "WireGuard客户端配置保存在 /root/wireguard-clients/client.conf"
+        log_info "WireGuard客户端配置已生成"
+        
+        # 保存WireGuard信息
+        cat > /root/wireguard-info.txt << EOF
+WireGuard VPN配置信息:
+服务端IP: ${SERVER_IP}
+监听端口: 51820
+服务端内网IP: 10.0.0.1/24
+客户端内网IP: 10.0.0.2/24
+客户端配置文件: /root/wireguard-clients/client.conf
+EOF
+        log_info "WireGuard配置信息已保存到 /root/wireguard-info.txt"
+    else
+        log_info "跳过客户端配置生成"
     fi
 }
 
@@ -775,14 +976,8 @@ main() {
     create_backup_scripts
     create_monitor_script
     
-    log_info "所有组件安装完成！"
-    log_info "V2Ray Trojan信息已保存"
-    if [ -f "/root/wireguard-clients/client.conf" ]; then
-        log_info "WireGuard客户端配置：/root/wireguard-clients/client.conf"
-    fi
-    log_info "备份脚本：/root/backup.sh"
-    log_info "恢复脚本：/root/restore.sh"
-    log_info "监控脚本：/root/monitor.sh"
+    # 显示安装完成后的配置信息汇总
+    show_installation_summary
 }
 
 # 执行主流程
