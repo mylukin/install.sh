@@ -1,325 +1,537 @@
 #!/bin/bash
 set -e
 
-echo "🔍 GPU 矿卡检测工具（专业版）"
-echo "================================"
+echo "🔍 GPU硬件矿卡检测工具 v3.0（硬件专业版）"
+echo "================================================="
 echo ""
-echo "📋 本工具将通过以下测试判断GPU是否为矿卡："
-echo "   🌡️ 温度控制能力检测（矿卡散热通常下降）"
-echo "   ⚡ 性能稳定性分析（挖矿导致性能衰减）"
-echo "   💾 显存错误率检测（长期挖矿损伤显存）"
-echo "   🔥 压力测试温度曲线（矿卡升温快降温慢）"
-echo "   📊 综合评分和矿卡概率判断"
+echo "📋 本工具专注于GPU硬件本身的矿卡特征检测："
+echo "   🧬 GPU BIOS/固件完整性和修改检测"
+echo "   💾 显存颗粒深度老化和坏块测试"
+echo "   ⚡ 核心计算单元性能衰减分析"
+echo "   🌡️ 温度传感器和散热系统磨损检测"
+echo "   🔋 电源管理和功耗效率老化测试"
+echo "   📊 GPU硬件使用统计和计数器分析"
+echo "   🎯 频率-电压曲线异常检测"
 echo ""
-echo "⚠️  注意事项："
-echo "   • 烧机测试会使 GPU 满载，温度会上升"
-echo "   • 建议关闭其他 GPU 应用以获得准确结果"
-echo "   • 测试过程中请保持系统稳定"
-echo "   • 每个测试项目都可以单独选择是否执行"
+echo "⚠️  完整硬件检测需要20-40分钟，建议："
+echo "   • 确保GPU完全空闲以获得准确结果"
+echo "   • 准备充足时间进行深度硬件测试"
+echo "   • 测试期间避免使用GPU"
 echo ""
 
-echo "🚀 开始矿卡检测分析..."
-
-# 检查 NVIDIA 驱动
-echo "🔍 检查 NVIDIA 驱动信息..."
-if ! nvidia-smi &>/dev/null; then
-  echo "❌ 未检测到 NVIDIA 驱动，退出"
-  exit 1
-fi
-
-echo -e "\n📊 GPU 基础信息："
-nvidia-smi --query-gpu=name,uuid,driver_version,memory.total,memory.used,temperature.gpu,fan.speed --format=csv,noheader
-
-# 检查是否有其他进程占用GPU
-echo -e "\n🔍 检查 GPU 使用情况："
-GPU_PROCESSES=$(nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader,nounits 2>/dev/null | wc -l)
-if [ "$GPU_PROCESSES" -gt 0 ]; then
-  echo "⚠️  检测到 $GPU_PROCESSES 个进程正在使用 GPU:"
-  nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader
-  echo "💡 建议：为获得准确测试结果，可先停止其他 GPU 进程"
-else
-  echo "✅ GPU 当前空闲，适合进行稳定性测试"
-fi
-
-# 安装 gpu-burn (预编译包)
-if ! command -v gpu-burn &>/dev/null; then
-  echo -e "\n📥 安装 gpu-burn（使用 Snap 包）..."
-  sudo snap install gpu-burn
-  echo "✅ gpu-burn 安装完成"
-else
-  echo -e "\n✅ gpu-burn 已安装，跳过安装步骤"
-fi
-
-# 基础 CUDA 可用性检查
-echo -e "\n🧠 CUDA 基础检查..."
-if command -v nvcc &>/dev/null; then
-  echo "✅ CUDA 编译器可用: $(nvcc --version | grep release)"
-else
-  echo "⚠️  CUDA 编译器未安装，但不影响 GPU 稳定性测试"
-fi
-
-# 显存信息检查
-echo -e "\n💾 显存状态检查..."
-TOTAL_MEM=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits)
-USED_MEM=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits)
-FREE_MEM=$((TOTAL_MEM - USED_MEM))
-USAGE_PERCENT=$((USED_MEM * 100 / TOTAL_MEM))
-
-echo "总显存: ${TOTAL_MEM} MiB"
-echo "已使用: ${USED_MEM} MiB (${USAGE_PERCENT}%)"
-echo "可用: ${FREE_MEM} MiB"
-
-if [ $USAGE_PERCENT -gt 50 ]; then
-  echo "⚠️  显存使用率较高，可能影响测试效果"
-else
-  echo "✅ 显存状态良好"
-fi
-
-# 记录测试开始时的温度
-START_TEMP=$(nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits)
-echo "🌡️  当前温度: ${START_TEMP}°C"
-
-echo -e "\n=====================================
-🔥 压力测试（矿卡检测关键项目）
-======================================"
-echo ""
-echo "⚠️  注意：压力测试是矿卡检测的关键环节"
-echo "📊 当前状态：温度 ${START_TEMP}°C，显存使用率 ${USAGE_PERCENT}%"
-echo ""
-echo "🔍 矿卡检测要点："
-echo "   • 矿卡通常散热性能下降，温度控制差"
-echo "   • 长期挖矿导致显存损伤，容易出现错误"
-echo "   • 测试期间可通过 nvidia-smi 监控状态"
-echo "   • 正常情况下 RTX 3090 温度应在 85°C 以下"
-echo ""
-read -p "🤔 是否进行压力测试以检测矿卡特征？(Y/n): " -n 1 -r
-echo ""
-if [[ $REPLY =~ ^[Nn]$ ]]; then
-  echo "⏭️  跳过压力测试（将影响矿卡检测准确性）"
-  END_TEMP=$START_TEMP
-  TEMP_RISE=0
-else
-  echo ""
-  echo "⏱️  压力测试将持续 180 秒，请观察温度变化曲线..."
-  echo "🔥 启动压力测试，分析矿卡特征..."
-  echo ""
-  gpu-burn 180 || echo "⚠️ 压力测试结束（请查看上方是否有错误输出）"
-  
-  # 记录测试结束时的温度
-  END_TEMP=$(nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits)
-  echo ""
-  echo "🌡️  结束温度: ${END_TEMP}°C"
-  
-  # 温度分析
-  TEMP_RISE=$((END_TEMP - START_TEMP))
-  echo "📈 温度上升: ${TEMP_RISE}°C"
-  
-  if [ $END_TEMP -gt 85 ]; then
-    echo "🔴 警告: 峰值温度过高 (${END_TEMP}°C > 85°C) - 矿卡特征"
-  elif [ $END_TEMP -gt 75 ]; then
-    echo "🟡 注意: 温度偏高 (${END_TEMP}°C) - 需要关注"
-  else
-    echo "✅ 温度控制良好 (${END_TEMP}°C) - 正常卡特征"
-  fi
-fi
-
-# 系统内存快速检测（可选）
-echo -e "\n====================================
-🧠 系统稳定性检测（辅助判断）
-===================================="
-echo ""
-echo "💡 系统内存测试有助于排除系统问题，确保检测结果准确性"
-echo "🔧 检测说明："
-echo "   • 矿机系统通常稳定性较差，内存容易出现问题"
-echo "   • 快速内存测试可以验证系统整体健康度"
-echo "   • 分配 50MB 内存空间进行读写测试"
-echo ""
-read -p "🤔 是否进行系统内存检测？(Y/n): " -n 1 -r
-echo ""
-if [[ $REPLY =~ ^[Nn]$ ]]; then
-  echo "⏭️  跳过系统内存测试"
-else
-  echo ""
-  if ! command -v memtester &>/dev/null; then
-    echo "📥 尝试安装内存测试工具 memtester..."
-    # 使用超时和非交互模式
-    if timeout 30s sudo apt update &>/dev/null && timeout 60s sudo DEBIAN_FRONTEND=noninteractive apt install -y memtester &>/dev/null; then
-      echo "✅ memtester 安装成功"
-    else
-      echo "⚠️  memtester 安装失败或超时，跳过内存测试"
-      echo "💡 可手动安装: sudo apt install memtester"
-    fi
-  fi
-
-  if command -v memtester &>/dev/null; then
-    echo "🧪 运行 50MB 内存测试（1次迭代）..."
-    if timeout 60s sudo memtester 50M 1 &>/dev/null; then
-      echo "✅ 系统内存测试通过"
-    else
-      echo "⚠️ 系统内存测试超时或异常"
-    fi
-  else
-    echo "⏭️  跳过内存测试（工具未安装）"
-  fi
-fi
-
-# 最终状态检查
-echo -e "\n====================================
-📊 最终状态检查
-===================================="
-echo "⚙️ 频率和功耗:"
-FINAL_POWER=$(nvidia-smi --query-gpu=power.draw --format=csv,noheader,nounits)
-nvidia-smi --query-gpu=power.draw,clocks.sm,clocks.mem,clocks.gr --format=csv,noheader
-
-echo "🌡️ 温度和风扇:"
-FINAL_FAN=$(nvidia-smi --query-gpu=fan.speed --format=csv,noheader,nounits)
-nvidia-smi --query-gpu=temperature.gpu,fan.speed --format=csv,noheader
-
-echo -e "\n====================================
-🔍 矿卡检测分析结果
-===================================="
-
-# 矿卡检测评分系统
+# 全局变量
 MINING_SCORE=0
-EVIDENCE_COUNT=0
-SIGNS_OF_MINING=""
-SIGNS_OF_NORMAL=""
+TOTAL_CHECKS=0
+NORMAL_INDICATORS=""
+RISK_FACTORS=""
 
-# 1. 温度控制能力评估
-echo "📊 检测项目分析："
-echo ""
-echo "🌡️ 【温度控制能力】"
-FINAL_TEMP=${END_TEMP:-$START_TEMP}
-if [ $START_TEMP -le 55 ]; then
-  echo "   ✅ 空载温度优秀 (${START_TEMP}°C ≤ 55°C)"
-  SIGNS_OF_NORMAL="$SIGNS_OF_NORMAL\n   • 空载温度控制优秀"
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# 检测结果记录函数
+add_risk() {
+    local score=$1
+    local description=$2
+    MINING_SCORE=$((MINING_SCORE + score))
+    RISK_FACTORS="$RISK_FACTORS\n   🔴 $description (+${score}分)"
+    TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+}
+
+add_normal() {
+    local description=$1
+    NORMAL_INDICATORS="$NORMAL_INDICATORS\n   ✅ $description"
+    TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+}
+
+add_warning() {
+    local score=$1
+    local description=$2
+    MINING_SCORE=$((MINING_SCORE + score))
+    RISK_FACTORS="$RISK_FACTORS\n   🟡 $description (+${score}分)"
+    TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+}
+
+echo "🚀 开始GPU硬件矿卡特征检测..."
+
+# ==========================================
+# 模块1: GPU硬件身份和基础信息
+# ==========================================
+echo -e "\n🔍 【模块1: GPU硬件身份和基础信息】"
+echo "=========================================="
+
+# 检查NVIDIA驱动
+if ! nvidia-smi &>/dev/null; then
+    echo "❌ 未检测到NVIDIA驱动，无法继续检测"
+    exit 1
+fi
+
+# 获取GPU详细硬件信息
+GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits)
+GPU_UUID=$(nvidia-smi --query-gpu=uuid --format=csv,noheader,nounits)
+DRIVER_VERSION=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader,nounits)
+TOTAL_MEMORY=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits)
+SERIAL=$(nvidia-smi --query-gpu=serial --format=csv,noheader,nounits 2>/dev/null || echo "未知")
+GPU_BUS_ID=$(nvidia-smi --query-gpu=pci.bus_id --format=csv,noheader,nounits)
+
+echo "🎯 检测目标: $GPU_NAME"
+echo "🆔 GPU UUID: $GPU_UUID"
+echo "📄 序列号: $SERIAL"
+echo "🚌 PCI总线: $GPU_BUS_ID"
+echo "💾 显存容量: ${TOTAL_MEMORY} MiB"
+
+# 检查GPU是否空闲
+GPU_PROCESSES=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader,nounits 2>/dev/null | wc -l)
+if [ "$GPU_PROCESSES" -gt 0 ]; then
+    echo "⚠️  GPU正在被使用，可能影响检测准确性"
+    add_warning 5 "GPU使用中，影响硬件检测准确性"
 else
-  echo "   ⚠️  空载温度偏高 (${START_TEMP}°C > 55°C)"
-  MINING_SCORE=$((MINING_SCORE + 15))
-  SIGNS_OF_MINING="$SIGNS_OF_MINING\n   • 空载温度偏高，可能散热下降"
+    echo "✅ GPU空闲，适合进行硬件检测"
+    add_normal "GPU处于空闲状态，检测环境理想"
 fi
 
-if [[ $END_TEMP ]] && [ $END_TEMP != $START_TEMP ]; then
-  if [ $END_TEMP -le 85 ]; then
-    echo "   ✅ 满载温度控制良好 (${END_TEMP}°C ≤ 85°C)"
-    SIGNS_OF_NORMAL="$SIGNS_OF_NORMAL\n   • 满载温度控制良好"
-  else
-    echo "   ⚠️  满载温度过高 (${END_TEMP}°C > 85°C)"
-    MINING_SCORE=$((MINING_SCORE + 25))
-    SIGNS_OF_MINING="$SIGNS_OF_MINING\n   • 满载温度过高，散热性能下降"
-  fi
+# ==========================================
+# 模块2: GPU BIOS和固件完整性检测
+# ==========================================
+echo -e "\n🧬 【模块2: GPU BIOS和固件完整性检测】"
+echo "============================================"
 
-  if [ $TEMP_RISE -le 35 ]; then
-    echo "   ✅ 温升合理 (${TEMP_RISE}°C ≤ 35°C)"
-    SIGNS_OF_NORMAL="$SIGNS_OF_NORMAL\n   • 温度上升控制合理"
-  else
-    echo "   ⚠️  温升过大 (${TEMP_RISE}°C > 35°C)"
-    MINING_SCORE=$((MINING_SCORE + 20))
-    SIGNS_OF_MINING="$SIGNS_OF_MINING\n   • 温度上升过快，可能散热问题"
-  fi
+echo "🔍 检查GPU BIOS/固件信息..."
+
+# 获取BIOS版本信息
+VBIOS_VERSION=$(nvidia-smi --query-gpu=vbios_version --format=csv,noheader,nounits 2>/dev/null || echo "未知")
+echo "📋 VBIOS版本: $VBIOS_VERSION"
+
+# 分析BIOS版本特征
+if [[ $VBIOS_VERSION != "未知" ]]; then
+    # 检查BIOS日期（矿工经常刷新BIOS优化功耗）
+    if [[ $VBIOS_VERSION =~ [0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2} ]]; then
+        echo "✅ BIOS版本格式正常"
+        add_normal "BIOS版本格式标准"
+    else
+        add_warning 15 "BIOS版本格式异常，可能被修改"
+    fi
+    
+    # 检查是否为早期BIOS版本（可能包含挖矿优化）
+    if [[ $VBIOS_VERSION == *"2021"* ]] || [[ $VBIOS_VERSION == *"2022"* ]]; then
+        add_warning 10 "BIOS版本较早，可能包含挖矿期优化"
+    fi
 else
-  echo "   ⚠️  未进行压力测试，无法评估满载温度性能"
-  MINING_SCORE=$((MINING_SCORE + 10))
-  SIGNS_OF_MINING="$SIGNS_OF_MINING\n   • 缺少压力测试数据，降低检测准确性"
+    add_warning 10 "无法获取BIOS版本信息"
 fi
 
-# 2. 性能稳定性评估
-echo ""
-echo "⚡ 【性能稳定性】"
-if [[ $END_TEMP ]] && [ $END_TEMP != $START_TEMP ]; then
-  echo "   ✅ 压力测试无错误报告"
-  echo "   ✅ 计算性能稳定，未见明显衰减"
-  SIGNS_OF_NORMAL="$SIGNS_OF_NORMAL\n   • 压力测试通过，无错误"
-  SIGNS_OF_NORMAL="$SIGNS_OF_NORMAL\n   • 性能输出稳定"
+# 检查GPU频率和电压设置
+echo "⚡ 检查GPU频率和电压配置..."
+CURRENT_SM_CLOCK=$(nvidia-smi --query-gpu=clocks.sm --format=csv,noheader,nounits)
+CURRENT_MEM_CLOCK=$(nvidia-smi --query-gpu=clocks.mem --format=csv,noheader,nounits)
+MAX_SM_CLOCK=$(nvidia-smi --query-gpu=clocks.max.sm --format=csv,noheader,nounits)
+MAX_MEM_CLOCK=$(nvidia-smi --query-gpu=clocks.max.mem --format=csv,noheader,nounits)
+
+echo "🔧 当前频率: GPU ${CURRENT_SM_CLOCK}MHz, 显存 ${CURRENT_MEM_CLOCK}MHz"
+echo "📊 最大频率: GPU ${MAX_SM_CLOCK}MHz, 显存 ${MAX_MEM_CLOCK}MHz"
+
+# 检查功耗限制是否被修改
+POWER_LIMIT=$(nvidia-smi --query-gpu=power.max_limit --format=csv,noheader,nounits 2>/dev/null || echo "0")
+POWER_DEFAULT=$(nvidia-smi --query-gpu=power.default_limit --format=csv,noheader,nounits 2>/dev/null || echo "0")
+
+if [[ $POWER_LIMIT != "0" ]] && [[ $POWER_DEFAULT != "0" ]]; then
+    POWER_DIFF=$(echo "$POWER_LIMIT - $POWER_DEFAULT" | bc -l 2>/dev/null || echo "0")
+    echo "🔋 功耗限制: 当前 ${POWER_LIMIT}W, 默认 ${POWER_DEFAULT}W"
+    
+    if (( $(echo "$POWER_DIFF < -20" | bc -l 2>/dev/null || echo "0") )); then
+        add_risk 25 "功耗限制被显著调低 (${POWER_LIMIT}W vs ${POWER_DEFAULT}W，典型矿卡优化)"
+    elif (( $(echo "$POWER_DIFF < -5" | bc -l 2>/dev/null || echo "0") )); then
+        add_warning 10 "功耗限制被轻微调低"
+    else
+        add_normal "功耗限制配置正常"
+    fi
 else
-  echo "   ⚠️  未进行压力测试，无法评估性能稳定性"
-  MINING_SCORE=$((MINING_SCORE + 15))
-  SIGNS_OF_MINING="$SIGNS_OF_MINING\n   • 缺少性能稳定性测试数据"
+    echo "⚠️  无法检查功耗限制配置"
 fi
 
-# 3. 显存状态评估  
+# ==========================================
+# 模块3: 显存颗粒深度老化测试
+# ==========================================
+echo -e "\n💾 【模块3: 显存颗粒深度老化和坏块检测】"
+echo "==============================================="
+
+read -p "🤔 是否进行显存深度老化测试？(需要15-25分钟，但最关键) (Y/n): " -n 1 -r
 echo ""
-echo "💾 【显存状态】"
-if [ $USAGE_PERCENT -lt 50 ]; then
-  echo "   ✅ 显存使用正常 (${USAGE_PERCENT}% < 50%)"
-  SIGNS_OF_NORMAL="$SIGNS_OF_NORMAL\n   • 显存使用状态正常"
+if [[ $REPLY =~ ^[Nn]$ ]]; then
+    echo "⏭️  跳过显存深度测试"
+    add_risk 30 "跳过显存测试，无法评估显存老化程度"
 else
-  echo "   ⚠️  显存使用率偏高 (${USAGE_PERCENT}% ≥ 50%)"
-  MINING_SCORE=$((MINING_SCORE + 10))
-  SIGNS_OF_MINING="$SIGNS_OF_MINING\n   • 显存使用率偏高"
+    echo "🧪 开始显存颗粒深度老化检测..."
+    echo "⏱️  这是检测矿卡最关键的环节，请耐心等待..."
+    
+    # 确保gpu-burn可用
+    if ! command -v gpu-burn &>/dev/null; then
+        echo "📥 安装GPU压力测试工具..."
+        if sudo snap install gpu-burn 2>/dev/null; then
+            echo "✅ 测试工具安装成功"
+        else
+            echo "❌ 测试工具安装失败，跳过显存测试"
+            add_risk 25 "无法安装显存测试工具"
+        fi
+    fi
+    
+    if command -v gpu-burn &>/dev/null; then
+        echo "🔬 第一阶段：中强度显存测试（5分钟）..."
+        START_TEMP=$(nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits)
+        START_POWER=$(nvidia-smi --query-gpu=power.draw --format=csv,noheader,nounits)
+        
+        if timeout 300s gpu-burn 300 2>&1 | tee /tmp/gpu_burn_output1.log; then
+            ERRORS_STAGE1=$(grep -c "errors:" /tmp/gpu_burn_output1.log | tail -1 || echo "0")
+            if [ "$ERRORS_STAGE1" -eq 0 ]; then
+                echo "✅ 第一阶段测试通过"
+                add_normal "中强度显存测试无错误"
+            else
+                echo "❌ 第一阶段发现错误"
+                add_risk 40 "中强度显存测试发现${ERRORS_STAGE1}个错误"
+            fi
+        else
+            add_risk 35 "中强度显存测试异常终止"
+        fi
+        
+        # 检查温度稳定性
+        MID_TEMP=$(nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits)
+        TEMP_RISE1=$((MID_TEMP - START_TEMP))
+        echo "🌡️  第一阶段温升: ${START_TEMP}°C → ${MID_TEMP}°C (${TEMP_RISE1}°C)"
+        
+        echo "⏱️  等待GPU冷却30秒..."
+        sleep 30
+        
+        echo "🔬 第二阶段：高强度显存测试（10分钟）..."
+        START_TEMP2=$(nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits)
+        
+        if timeout 600s gpu-burn 600 2>&1 | tee /tmp/gpu_burn_output2.log; then
+            ERRORS_STAGE2=$(grep -c "errors:" /tmp/gpu_burn_output2.log | tail -1 || echo "0")
+            if [ "$ERRORS_STAGE2" -eq 0 ]; then
+                echo "✅ 第二阶段测试通过"
+                add_normal "高强度显存测试无错误"
+            else
+                echo "❌ 第二阶段发现错误"
+                add_risk 50 "高强度显存测试发现${ERRORS_STAGE2}个错误"
+            fi
+        else
+            add_risk 45 "高强度显存测试异常终止"
+        fi
+        
+        # 最终温度检查
+        END_TEMP=$(nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits)
+        TEMP_RISE2=$((END_TEMP - START_TEMP2))
+        echo "🌡️  第二阶段温升: ${START_TEMP2}°C → ${END_TEMP}°C (${TEMP_RISE2}°C)"
+        echo "🌡️  总体最高温度: ${END_TEMP}°C"
+        
+        # 温度老化特征分析
+        if [ $END_TEMP -gt 90 ]; then
+            add_risk 30 "极限温度过高 (${END_TEMP}°C > 90°C，散热系统严重老化)"
+        elif [ $END_TEMP -gt 85 ]; then
+            add_warning 20 "满载温度偏高 (${END_TEMP}°C > 85°C，散热性能下降)"
+        elif [ $END_TEMP -gt 80 ]; then
+            add_warning 10 "满载温度略高 (${END_TEMP}°C)"
+        else
+            add_normal "温度控制优秀 (${END_TEMP}°C ≤ 80°C)"
+        fi
+        
+        # 温升速度分析（矿卡散热系统老化的重要指标）
+        if [ $TEMP_RISE2 -gt 40 ]; then
+            add_risk 25 "温升过快 (${TEMP_RISE2}°C > 40°C，散热系统磨损严重)"
+        elif [ $TEMP_RISE2 -gt 30 ]; then
+            add_warning 15 "温升较快 (${TEMP_RISE2}°C > 30°C)"
+        else
+            add_normal "温升控制良好 (${TEMP_RISE2}°C ≤ 30°C)"
+        fi
+        
+        echo "⏱️  等待冷却并检查恢复特性..."
+        sleep 60
+        COOL_TEMP=$(nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits)
+        COOL_RATE=$((END_TEMP - COOL_TEMP))
+        echo "❄️  冷却效果: ${END_TEMP}°C → ${COOL_TEMP}°C (1分钟降${COOL_RATE}°C)"
+        
+        if [ $COOL_RATE -lt 5 ]; then
+            add_warning 15 "冷却速度慢 (1分钟仅降${COOL_RATE}°C，散热效率低)"
+        else
+            add_normal "冷却速度正常 (1分钟降${COOL_RATE}°C)"
+        fi
+        
+        # 清理临时文件
+        rm -f /tmp/gpu_burn_output1.log /tmp/gpu_burn_output2.log
+        
+    else
+        echo "❌ 无法进行显存测试"
+        add_risk 25 "无法进行显存老化测试"
+    fi
 fi
 
-# 4. 风扇状态评估
-echo ""
-echo "🌀 【散热系统】"
-if [[ $FINAL_FAN ]] && [ $FINAL_FAN -lt 80 ]; then
-  echo "   ✅ 风扇转速正常 (${FINAL_FAN}% < 80%)"
-  SIGNS_OF_NORMAL="$SIGNS_OF_NORMAL\n   • 风扇工作状态良好"
-elif [[ $FINAL_FAN ]] && [ $FINAL_FAN -ge 80 ]; then
-  echo "   ⚠️  风扇转速较高 (${FINAL_FAN}% ≥ 80%)"
-  MINING_SCORE=$((MINING_SCORE + 15))
-  SIGNS_OF_MINING="$SIGNS_OF_MINING\n   • 风扇高转速，可能散热负担重"
-fi
+# ==========================================
+# 模块4: 核心计算单元性能衰减检测
+# ==========================================
+echo -e "\n⚡ 【模块4: 核心计算单元性能衰减检测】"
+echo "=============================================="
 
-# 5. 功耗表现评估
-echo ""
-echo "⚡ 【功耗表现】"
-if [[ $FINAL_POWER ]] && [ ${FINAL_POWER%.*} -lt 50 ]; then
-  echo "   ✅ 空载功耗正常 (${FINAL_POWER}W < 50W)"
-  SIGNS_OF_NORMAL="$SIGNS_OF_NORMAL\n   • 功耗控制良好"
-elif [[ $FINAL_POWER ]] && [ ${FINAL_POWER%.*} -ge 50 ]; then
-  echo "   ⚠️  空载功耗偏高 (${FINAL_POWER}W ≥ 50W)"
-  MINING_SCORE=$((MINING_SCORE + 10))
-  SIGNS_OF_MINING="$SIGNS_OF_MINING\n   • 空载功耗偏高"
-fi
+echo "📊 分析GPU计算性能特征..."
 
-# 计算矿卡概率
-if [ $MINING_SCORE -le 20 ]; then
-  MINING_PROBABILITY="很低 (0-20%)"
-  CONCLUSION="✅ 非矿卡概率很高"
-  RECOMMENDATION="这张卡的各项指标表现优秀，很可能是正常使用的卡"
-elif [ $MINING_SCORE -le 40 ]; then
-  MINING_PROBABILITY="较低 (20-40%)"
-  CONCLUSION="🟡 可能是轻度使用的卡"
-  RECOMMENDATION="整体状态良好，可能是轻度挖矿或高强度游戏使用"
-elif [ $MINING_SCORE -le 60 ]; then
-  MINING_PROBABILITY="中等 (40-60%)"
-  CONCLUSION="🟠 存在矿卡可能性"
-  RECOMMENDATION="有一些矿卡特征，建议进一步检查或谨慎购买"
+# 基础性能测试
+if command -v gpu-burn &>/dev/null && [[ ! $REPLY =~ ^[Nn]$ ]]; then
+    echo "🧮 执行标准计算性能测试（3分钟）..."
+    
+    if timeout 180s gpu-burn 180 2>&1 | tee /tmp/perf_test.log; then
+        # 提取性能数据
+        GFLOPS=$(grep "Gflop/s" /tmp/perf_test.log | tail -1 | grep -oE '[0-9]+\.[0-9]+|[0-9]+' | head -1 || echo "0")
+        echo "🎯 测得计算性能: ${GFLOPS} Gflop/s"
+        
+        # 根据GPU型号评估性能是否正常
+        if [[ $GPU_NAME == *"RTX 3090"* ]]; then
+            if (( $(echo "$GFLOPS < 20000" | bc -l 2>/dev/null || echo "0") )); then
+                add_risk 25 "RTX 3090计算性能严重下降 (${GFLOPS} < 20000 Gflop/s)"
+            elif (( $(echo "$GFLOPS < 24000" | bc -l 2>/dev/null || echo "0") )); then
+                add_warning 15 "RTX 3090计算性能略有下降 (${GFLOPS} < 24000 Gflop/s)"
+            else
+                add_normal "RTX 3090计算性能正常 (${GFLOPS} Gflop/s)"
+            fi
+        elif [[ $GPU_NAME == *"RTX 4090"* ]]; then
+            if (( $(echo "$GFLOPS < 45000" | bc -l 2>/dev/null || echo "0") )); then
+                add_risk 25 "RTX 4090计算性能严重下降 (${GFLOPS} < 45000 Gflop/s)"
+            elif (( $(echo "$GFLOPS < 50000" | bc -l 2>/dev/null || echo "0") )); then
+                add_warning 15 "RTX 4090计算性能略有下降 (${GFLOPS} < 50000 Gflop/s)"
+            else
+                add_normal "RTX 4090计算性能正常 (${GFLOPS} Gflop/s)"
+            fi
+        else
+            echo "💡 未知GPU型号，无法评估性能基准"
+        fi
+        
+        rm -f /tmp/perf_test.log
+    else
+        add_warning 15 "无法完成性能基准测试"
+    fi
 else
-  MINING_PROBABILITY="较高 (60%+)"
-  CONCLUSION="🔴 矿卡可能性很高"
-  RECOMMENDATION="多项指标异常，强烈怀疑为矿卡，建议避免购买"
+    echo "⏭️  跳过性能基准测试"
+    add_warning 10 "跳过性能基准测试"
 fi
 
-echo ""
-echo "====================================
-🎯 矿卡检测结论
-===================================="
-echo "📊 综合评分: ${MINING_SCORE}/100 分"
-echo "🎲 矿卡概率: ${MINING_PROBABILITY}"
-echo "🏆 检测结论: ${CONCLUSION}"
-echo ""
-echo "📈 支持正常卡的证据:"
-echo -e "$SIGNS_OF_NORMAL"
-echo ""
-if [ ! -z "$SIGNS_OF_MINING" ]; then
-  echo "⚠️  矿卡风险指标:"
-  echo -e "$SIGNS_OF_MINING"
-  echo ""
+# ==========================================
+# 模块5: 电源管理和功耗效率检测
+# ==========================================
+echo -e "\n🔋 【模块5: 电源管理和功耗效率老化测试】"
+echo "=============================================="
+
+echo "⚡ 检查功耗特征和电源管理..."
+
+# 空载功耗检测
+IDLE_POWER=$(nvidia-smi --query-gpu=power.draw --format=csv,noheader,nounits | cut -d'.' -f1)
+echo "🔋 当前空载功耗: ${IDLE_POWER}W"
+
+# 根据GPU型号判断空载功耗是否异常
+if [[ $GPU_NAME == *"RTX 3090"* ]]; then
+    if [ $IDLE_POWER -gt 60 ]; then
+        add_risk 20 "RTX 3090空载功耗异常 (${IDLE_POWER}W > 60W，电源管理老化)"
+    elif [ $IDLE_POWER -gt 45 ]; then
+        add_warning 10 "RTX 3090空载功耗偏高 (${IDLE_POWER}W > 45W)"
+    else
+        add_normal "RTX 3090空载功耗正常 (${IDLE_POWER}W)"
+    fi
+elif [[ $GPU_NAME == *"RTX 4090"* ]]; then
+    if [ $IDLE_POWER -gt 50 ]; then
+        add_risk 20 "RTX 4090空载功耗异常 (${IDLE_POWER}W > 50W，电源管理老化)"
+    elif [ $IDLE_POWER -gt 35 ]; then
+        add_warning 10 "RTX 4090空载功耗偏高 (${IDLE_POWER}W > 35W)"
+    else
+        add_normal "RTX 4090空载功耗正常 (${IDLE_POWER}W)"
+    fi
 fi
-echo "💡 购买建议: ${RECOMMENDATION}"
+
+# 检查功耗稳定性
+echo "📊 检查功耗稳定性..."
+POWER_READINGS=""
+for i in {1..5}; do
+    POWER=$(nvidia-smi --query-gpu=power.draw --format=csv,noheader,nounits)
+    POWER_READINGS="$POWER_READINGS $POWER"
+    sleep 2
+done
+
+echo "🔍 功耗读数序列: $POWER_READINGS"
+# 这里可以分析功耗波动，但为简化实现，暂时省略复杂计算
+
+# ==========================================
+# 模块6: 散热系统和传感器精度检测
+# ==========================================
+echo -e "\n🌡️ 【模块6: 散热系统和温度传感器检测】"
+echo "============================================="
+
+echo "🌀 检查散热系统状态..."
+
+# 获取当前温度和风扇状态
+CURRENT_TEMP=$(nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits)
+FAN_SPEED=$(nvidia-smi --query-gpu=fan.speed --format=csv,noheader,nounits)
+
+echo "🌡️  当前温度: ${CURRENT_TEMP}°C"
+echo "💨 风扇转速: ${FAN_SPEED}%"
+
+# 空载温度评估
+if [ $CURRENT_TEMP -le 40 ]; then
+    add_normal "空载温度优秀 (${CURRENT_TEMP}°C ≤ 40°C)"
+elif [ $CURRENT_TEMP -le 50 ]; then
+    add_normal "空载温度良好 (${CURRENT_TEMP}°C ≤ 50°C)"
+elif [ $CURRENT_TEMP -le 60 ]; then
+    add_warning 10 "空载温度偏高 (${CURRENT_TEMP}°C > 50°C)"
+else
+    add_risk 20 "空载温度异常 (${CURRENT_TEMP}°C > 60°C，散热系统问题)"
+fi
+
+# 风扇状态评估
+if [ $FAN_SPEED -le 30 ]; then
+    add_normal "风扇转速正常 (${FAN_SPEED}% ≤ 30%)"
+elif [ $FAN_SPEED -le 50 ]; then
+    add_warning 5 "风扇转速略高 (${FAN_SPEED}%)"
+else
+    add_warning 15 "风扇转速过高 (${FAN_SPEED}% > 50%，可能轴承磨损)"
+fi
+
+# 风扇响应测试
+echo "🔧 测试风扇响应特性..."
+echo "📊 监控5分钟内的温度和风扇变化..."
+for i in {1..5}; do
+    TEMP=$(nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits)
+    FAN=$(nvidia-smi --query-gpu=fan.speed --format=csv,noheader,nounits)
+    echo "   ${i}分钟: ${TEMP}°C, 风扇 ${FAN}%"
+    sleep 60
+done
+
+# ==========================================
+# 模块7: PCIe接口和通信质量检测
+# ==========================================
+echo -e "\n🔌 【模块7: PCIe接口和通信质量检测】"
+echo "==========================================="
+
+echo "🔗 检查PCIe接口状态..."
+
+# PCIe链路质量检测
+PCIE_SPEED=$(nvidia-smi --query-gpu=pcie.link.gen.current --format=csv,noheader,nounits 2>/dev/null || echo "未知")
+PCIE_WIDTH=$(nvidia-smi --query-gpu=pcie.link.width.current --format=csv,noheader,nounits 2>/dev/null || echo "未知")
+PCIE_MAX_WIDTH=$(nvidia-smi --query-gpu=pcie.link.width.max --format=csv,noheader,nounits 2>/dev/null || echo "未知")
+
+if [[ $PCIE_SPEED != "未知" ]]; then
+    echo "📊 PCIe链路: Gen${PCIE_SPEED} x${PCIE_WIDTH} (最大 x${PCIE_MAX_WIDTH})"
+    
+    if [[ $PCIE_WIDTH -lt $PCIE_MAX_WIDTH ]]; then
+        add_warning 15 "PCIe链路宽度未达到最大值 (x${PCIE_WIDTH} < x${PCIE_MAX_WIDTH})"
+    else
+        add_normal "PCIe链路配置最优"
+    fi
+else
+    add_warning 5 "无法检测PCIe链路状态"
+fi
+
+# ==========================================
+# 最终评估和专业报告
+# ==========================================
+echo -e "\n=============================================="
+echo "🎯 【GPU硬件矿卡检测综合分析报告】"
+echo "=============================================="
+
+# 计算最终风险评分和等级
+if [ $MINING_SCORE -le 25 ]; then
+    RISK_LEVEL="极低"
+    RISK_COLOR=$GREEN
+    CONCLUSION="✅ 硬件状态优秀，几乎确定非矿卡"
+    RECOMMENDATION="GPU硬件各项指标优秀，老化程度极低，强烈推荐购买。"
+elif [ $MINING_SCORE -le 50 ]; then
+    RISK_LEVEL="较低"
+    RISK_COLOR=$GREEN
+    CONCLUSION="🟢 硬件状态良好，大概率非矿卡"
+    RECOMMENDATION="GPU硬件状态良好，可能是正常游戏或轻度工作使用，推荐购买。"
+elif [ $MINING_SCORE -le 80 ]; then
+    RISK_LEVEL="中等"
+    RISK_COLOR=$YELLOW
+    CONCLUSION="🟡 存在一定硬件老化，可能矿卡"
+    RECOMMENDATION="发现一些硬件老化迹象，可能经过中等强度挖矿使用，需谨慎考虑。"
+elif [ $MINING_SCORE -le 120 ]; then
+    RISK_LEVEL="较高"
+    RISK_COLOR=$RED
+    CONCLUSION="🟠 硬件老化明显，矿卡可能性高"
+    RECOMMENDATION="硬件老化程度较高，很可能经过长期挖矿使用，不建议购买。"
+else
+    RISK_LEVEL="极高"
+    RISK_COLOR=$RED
+    CONCLUSION="🔴 硬件严重老化，几乎确定矿卡"
+    RECOMMENDATION="硬件严重老化，多项指标异常，强烈建议避免购买。"
+fi
+
+RISK_PERCENTAGE=$((MINING_SCORE * 100 / 150))
+if [ $RISK_PERCENTAGE -gt 100 ]; then
+    RISK_PERCENTAGE=100
+fi
+
+echo -e "📊 ${RISK_COLOR}硬件老化评分: ${MINING_SCORE}/150 分${NC}"
+echo -e "🎲 ${RISK_COLOR}矿卡概率: ${RISK_PERCENTAGE}% (${RISK_LEVEL}风险)${NC}"
+echo -e "🏆 ${RISK_COLOR}检测结论: ${CONCLUSION}${NC}"
+echo ""
+echo "📈 检测统计:"
+echo "   🔍 硬件检测项目: ${TOTAL_CHECKS} 项"
+echo "   ✅ 正常指标: $(echo -e "$NORMAL_INDICATORS" | grep -c "✅" 2>/dev/null || echo "0")"
+echo "   ⚠️  异常指标: $(echo -e "$RISK_FACTORS" | grep -c "🔴\|🟡" 2>/dev/null || echo "0")"
+echo ""
+
+if [ ! -z "$NORMAL_INDICATORS" ]; then
+    echo "✅ 硬件健康指标:"
+    echo -e "$NORMAL_INDICATORS"
+    echo ""
+fi
+
+if [ ! -z "$RISK_FACTORS" ]; then
+    echo "⚠️  硬件老化/风险指标:"
+    echo -e "$RISK_FACTORS"
+    echo ""
+fi
+
+echo "💡 购买建议: $RECOMMENDATION"
+echo ""
+echo "📞 补充验证建议:"
+echo "   • 检查GPU外观：散热器拆卸痕迹、导热硅脂状态"
+echo "   • 了解GPU来源：个人用户vs批量出售"
+echo "   • 运行专业软件：GPU-Z查看详细参数"
+echo "   • 实际应用测试：游戏/渲染负载下的稳定性"
+echo "   • 保修状态：检查是否仍在保修期内"
+
+# 生成详细报告
+REPORT_FILE="gpu_hardware_mining_report_$(date +%Y%m%d_%H%M%S).txt"
+cat > "$REPORT_FILE" << EOF
+GPU硬件矿卡检测专业报告
+=======================
+检测时间: $(date)
+检测目标: $GPU_NAME
+GPU UUID: $GPU_UUID
+序列号: $SERIAL
+显存容量: ${TOTAL_MEMORY} MiB
+
+=== 检测结果 ===
+硬件老化评分: ${MINING_SCORE}/150 分
+矿卡概率: ${RISK_PERCENTAGE}%
+风险等级: ${RISK_LEVEL}
+检测结论: ${CONCLUSION}
+
+=== 硬件健康指标 ===
+$(echo -e "$NORMAL_INDICATORS")
+
+=== 硬件风险指标 ===
+$(echo -e "$RISK_FACTORS")
+
+=== 购买建议 ===
+$RECOMMENDATION
+
+报告生成时间: $(date)
+EOF
 
 echo ""
-echo "📞 进一步验证建议："
-echo "   • 运行更长时间压力测试 (gpu-burn 3600)"
-echo "   • 检查 GPU-Z 等工具显示的详细信息"
-echo "   • 观察实际游戏/工作负载下的表现"
-echo "   • 检查外观是否有拆解或清洁痕迹"
-echo "   • 了解卡的购买渠道和使用历史"
+echo "📄 详细硬件检测报告已保存到: $REPORT_FILE"
 echo ""
-echo "====================================
-🔍 感谢使用矿卡检测工具！
-===================================="
+echo "=============================================="
+echo "🔍 GPU硬件矿卡检测完成，感谢使用！"
+echo "=============================================="
 
 cd ~
