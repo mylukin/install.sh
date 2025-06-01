@@ -141,8 +141,14 @@ if [[ $POWER_LIMIT != "0" ]] && [[ $POWER_DEFAULT != "0" ]]; then
     POWER_DIFF=$(echo "$POWER_LIMIT - $POWER_DEFAULT" | bc -l 2>/dev/null || echo "0")
     echo "🔋 功耗限制: 当前 ${POWER_LIMIT}W, 默认 ${POWER_DEFAULT}W"
     
-    if (( $(echo "$POWER_DIFF < -20" | bc -l 2>/dev/null || echo "0") )); then
-        add_risk 25 "功耗限制被显著调低 (${POWER_LIMIT}W vs ${POWER_DEFAULT}W，典型矿卡优化)"
+    if (( $(echo "$POWER_DIFF > 15" | bc -l 2>/dev/null || echo "0") )); then
+        add_normal "功耗限制被提高 (${POWER_LIMIT}W > ${POWER_DEFAULT}W，游戏/专业用户超频特征)"
+    elif (( $(echo "$POWER_DIFF > 5" | bc -l 2>/dev/null || echo "0") )); then
+        add_normal "功耗限制被轻微提高，支持非矿卡"
+    elif (( $(echo "$POWER_DIFF < -30" | bc -l 2>/dev/null || echo "0") )); then
+        add_risk 30 "功耗限制被大幅调低 (${POWER_LIMIT}W vs ${POWER_DEFAULT}W，典型矿卡效率优化)"
+    elif (( $(echo "$POWER_DIFF < -15" | bc -l 2>/dev/null || echo "0") )); then
+        add_warning 20 "功耗限制被显著调低 (${POWER_LIMIT}W vs ${POWER_DEFAULT}W，可能矿卡优化)"
     elif (( $(echo "$POWER_DIFF < -5" | bc -l 2>/dev/null || echo "0") )); then
         add_warning 10 "功耗限制被轻微调低"
     else
@@ -184,13 +190,19 @@ else
         START_POWER=$(nvidia-smi --query-gpu=power.draw --format=csv,noheader,nounits)
         
         if timeout 300s gpu-burn 300 2>&1 | tee /tmp/gpu_burn_output1.log; then
-            ERRORS_STAGE1=$(grep -c "errors:" /tmp/gpu_burn_output1.log | tail -1 || echo "0")
-            if [ "$ERRORS_STAGE1" -eq 0 ]; then
+            # 正确提取实际错误数量
+            ERRORS_STAGE1=$(grep "errors:" /tmp/gpu_burn_output1.log | tail -1 | grep -oE 'errors: [0-9]+' | grep -oE '[0-9]+' || echo "0")
+            FINAL_RESULT=$(grep "GPU 0:" /tmp/gpu_burn_output1.log | tail -1 || echo "")
+            
+            echo "🔍 第一阶段错误数: ${ERRORS_STAGE1}"
+            echo "📊 最终结果: ${FINAL_RESULT}"
+            
+            if [[ $FINAL_RESULT == *"OK"* ]] && [ "$ERRORS_STAGE1" -eq 0 ]; then
                 echo "✅ 第一阶段测试通过"
                 add_normal "中强度显存测试无错误"
             else
-                echo "❌ 第一阶段发现错误"
-                add_risk 40 "中强度显存测试发现${ERRORS_STAGE1}个错误"
+                echo "❌ 第一阶段测试异常"
+                add_risk 40 "中强度显存测试发现${ERRORS_STAGE1}个错误或测试失败"
             fi
         else
             add_risk 35 "中强度显存测试异常终止"
@@ -208,13 +220,19 @@ else
         START_TEMP2=$(nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits)
         
         if timeout 600s gpu-burn 600 2>&1 | tee /tmp/gpu_burn_output2.log; then
-            ERRORS_STAGE2=$(grep -c "errors:" /tmp/gpu_burn_output2.log | tail -1 || echo "0")
-            if [ "$ERRORS_STAGE2" -eq 0 ]; then
+            # 正确提取实际错误数量
+            ERRORS_STAGE2=$(grep "errors:" /tmp/gpu_burn_output2.log | tail -1 | grep -oE 'errors: [0-9]+' | grep -oE '[0-9]+' || echo "0")
+            FINAL_RESULT2=$(grep "GPU 0:" /tmp/gpu_burn_output2.log | tail -1 || echo "")
+            
+            echo "🔍 第二阶段错误数: ${ERRORS_STAGE2}"
+            echo "📊 最终结果: ${FINAL_RESULT2}"
+            
+            if [[ $FINAL_RESULT2 == *"OK"* ]] && [ "$ERRORS_STAGE2" -eq 0 ]; then
                 echo "✅ 第二阶段测试通过"
                 add_normal "高强度显存测试无错误"
             else
-                echo "❌ 第二阶段发现错误"
-                add_risk 50 "高强度显存测试发现${ERRORS_STAGE2}个错误"
+                echo "❌ 第二阶段测试异常"
+                add_risk 50 "高强度显存测试发现${ERRORS_STAGE2}个错误或测试失败"
             fi
         else
             add_risk 45 "高强度显存测试异常终止"
@@ -280,9 +298,19 @@ if command -v gpu-burn &>/dev/null && [[ ! $REPLY =~ ^[Nn]$ ]]; then
     echo "🧮 执行标准计算性能测试（3分钟）..."
     
     if timeout 180s gpu-burn 180 2>&1 | tee /tmp/perf_test.log; then
-        # 提取性能数据
+        # 提取性能数据和错误检查
         GFLOPS=$(grep "Gflop/s" /tmp/perf_test.log | tail -1 | grep -oE '[0-9]+\.[0-9]+|[0-9]+' | head -1 || echo "0")
+        PERF_ERRORS=$(grep "errors:" /tmp/perf_test.log | tail -1 | grep -oE 'errors: [0-9]+' | grep -oE '[0-9]+' || echo "0")
+        PERF_RESULT=$(grep "GPU 0:" /tmp/perf_test.log | tail -1 || echo "")
+        
         echo "🎯 测得计算性能: ${GFLOPS} Gflop/s"
+        echo "🔍 性能测试错误数: ${PERF_ERRORS}"
+        
+        if [[ $PERF_RESULT == *"OK"* ]] && [ "$PERF_ERRORS" -eq 0 ]; then
+            add_normal "性能基准测试无错误"
+        else
+            add_warning 15 "性能测试发现${PERF_ERRORS}个错误"
+        fi
         
         # 根据GPU型号评估性能是否正常
         if [[ $GPU_NAME == *"RTX 3090"* ]]; then
