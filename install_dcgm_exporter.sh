@@ -203,11 +203,49 @@ install_nvidia_container_toolkit() {
 test_nvidia_docker() {
     log_info "测试 NVIDIA Docker 集成..."
     
-    if docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu22.04 nvidia-smi &> /dev/null; then
-        log_info "NVIDIA Docker 集成测试通过。"
-    else
-        log_error "NVIDIA Docker 集成测试失败，请检查配置。"
+    # 首先尝试拉取测试镜像
+    log_info "拉取 CUDA 测试镜像..."
+    if ! docker pull nvidia/cuda:12.9.0-base-ubuntu22.04; then
+        log_error "无法拉取 CUDA 测试镜像。"
         exit 1
+    fi
+    
+    # 测试 GPU 访问
+    log_info "运行 GPU 访问测试..."
+    local test_output
+    test_output=$(docker run --rm --gpus all nvidia/cuda:12.9.0-base-ubuntu22.04 nvidia-smi 2>&1)
+    local exit_code=$?
+    
+    if [ $exit_code -eq 0 ]; then
+        log_info "NVIDIA Docker 集成测试通过。"
+        echo "GPU 信息："
+        echo "$test_output" | grep -E "(GeForce|RTX|GTX|Tesla|Quadro|Driver Version)"
+    else
+        log_error "NVIDIA Docker 集成测试失败。"
+        log_error "错误输出："
+        echo "$test_output"
+        
+        # 提供调试信息
+        log_info "调试信息："
+        log_info "1. 检查 Docker 配置："
+        cat /etc/docker/daemon.json 2>/dev/null || echo "daemon.json 文件不存在"
+        
+        log_info "2. 检查 nvidia-ctk 配置："
+        nvidia-ctk --version
+        
+        log_info "3. 重新配置并重启 Docker..."
+        nvidia-ctk runtime configure --runtime=docker
+        systemctl restart docker
+        sleep 5
+        
+        # 再次测试
+        log_info "重新测试 GPU 访问..."
+        if docker run --rm --gpus all nvidia/cuda:12.9.0-base-ubuntu22.04 nvidia-smi; then
+            log_info "重新配置后测试成功。"
+        else
+            log_error "重新配置后仍然失败，请手动检查配置。"
+            exit 1
+        fi
     fi
 }
 
