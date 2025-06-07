@@ -124,6 +124,7 @@ install_cuda() {
 install_docker() {
     if command -v docker &> /dev/null; then
         log_info "Docker 已安装，版本: $(docker --version)"
+        configure_docker_permissions
         return 0
     fi
 
@@ -159,7 +160,44 @@ install_docker() {
     systemctl start docker
     systemctl enable docker
 
+    # 配置 Docker 权限
+    configure_docker_permissions
+
     log_info "Docker 安装完成。"
+}
+
+# 配置 Docker 权限
+configure_docker_permissions() {
+    log_info "配置 Docker 用户权限..."
+    
+    # 创建 docker 组（如果不存在）
+    if ! getent group docker > /dev/null 2>&1; then
+        groupadd docker
+        log_info "已创建 docker 组。"
+    fi
+    
+    # 获取当前的非 root 用户
+    local current_user
+    if [ -n "$SUDO_USER" ]; then
+        current_user="$SUDO_USER"
+    else
+        current_user=$(logname 2>/dev/null || echo "")
+    fi
+    
+    if [ -n "$current_user" ] && [ "$current_user" != "root" ]; then
+        # 将用户添加到 docker 组
+        if ! groups "$current_user" | grep -q docker; then
+            usermod -aG docker "$current_user"
+            log_info "已将用户 $current_user 添加到 docker 组。"
+            log_warn "请注意：用户需要重新登录或运行 'newgrp docker' 以使权限生效。"
+        else
+            log_info "用户 $current_user 已在 docker 组中。"
+        fi
+    fi
+    
+    # 设置 docker.sock 权限
+    chmod 666 /var/run/docker.sock
+    log_info "已设置 Docker socket 权限。"
 }
 
 # 安装 NVIDIA Container Toolkit
@@ -307,11 +345,26 @@ verify_dcgm_exporter() {
 show_completion_info() {
     local SERVER_IP
     SERVER_IP=$(hostname -I | awk '{print $1}')
+    local current_user
+    if [ -n "$SUDO_USER" ]; then
+        current_user="$SUDO_USER"
+    else
+        current_user=$(logname 2>/dev/null || echo "")
+    fi
     
     echo
     log_info "======================== 安装完成 ========================"
     log_info "DCGM Exporter 已成功安装并运行！"
     echo
+    
+    if [ -n "$current_user" ] && [ "$current_user" != "root" ]; then
+        log_warn "重要提示："
+        log_warn "用户 $current_user 已添加到 docker 组，但需要重新登录以使权限生效。"
+        log_warn "或者运行以下命令立即生效："
+        log_warn "  newgrp docker"
+        echo
+    fi
+    
     log_info "访问方式："
     log_info "  本地访问: http://localhost:9400/metrics"
     log_info "  远程访问: http://${SERVER_IP}:9400/metrics"
@@ -321,6 +374,9 @@ show_completion_info() {
     log_info "  查看日志: docker logs dcgm-exporter"
     log_info "  重启容器: docker restart dcgm-exporter"
     log_info "  停止容器: docker stop dcgm-exporter"
+    echo
+    log_info "测试 Docker GPU 访问："
+    log_info "  docker run --rm --gpus all nvidia/cuda:12.9.0-base-ubuntu22.04 nvidia-smi"
     echo
     log_info "==========================================================="
 }
