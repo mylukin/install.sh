@@ -1,9 +1,42 @@
-#!/bin/bash
+# 验证安装
+verify_installation() {
+    log_info "验证Docker安装..."
+    
+    # 检查Docker版本
+    echo "Docker版本信息:"
+    sudo docker --version
+    sudo docker compose version
+    
+    # 检查Docker服务状态
+    if sudo systemctl is-active --quiet docker; then
+        log_success "Docker服务运行正常"
+    else
+        log_error "Docker服务未运行"
+        return 1
+    fi
+    
+    # 测试权限
+    test_docker_permissions
+    
+    # 运行测试容器（优先使用非sudo）
+    log_info "运行测试容器..."
+    if docker run --rm hello-world &> /dev/null 2>&1; then
+        log_success "Docker测试容器运行成功（无需sudo）"
+    elif sudo docker run --rm hello-world &> /dev/null; then
+        log_success "Docker测试容器运行成功（需要sudo）"
+        log_warning "建议解决权限问题以避免使用sudo"
+    else
+        log_error "Docker测试容器运行失败"
+        return 1
+    fi
+}#!/bin/bash
 
 # Docker 一键安装脚本 - Ubuntu Server 24.04
 # 作者: Claude AI
-# 版本: 1.0
-# 使用方法: chmod +x install_docker.sh && ./install_docker.sh
+# 版本: 1.1
+# 使用方法: 
+#   安装Docker: chmod +x install_docker.sh && ./install_docker.sh
+#   修复权限: ./install_docker.sh --fix-permissions
 
 set -e  # 遇到错误立即退出
 
@@ -145,25 +178,66 @@ add_user_to_docker_group() {
     log_info "将当前用户添加到docker组..."
     sudo usermod -aG docker $USER
     log_success "用户已添加到docker组"
-    log_warning "请注销并重新登录以生效，或运行: newgrp docker"
+    
+    # 检查当前shell是否已在docker组中
+    if ! groups $USER | grep -q docker; then
+        log_warning "当前shell session还没有docker组权限"
+    fi
 }
 
-# 验证安装
-verify_installation() {
-    log_info "验证Docker安装..."
+# 修复Docker权限问题
+fix_docker_permissions() {
+    log_info "检查和修复Docker权限..."
     
-    # 检查Docker版本
-    echo "Docker版本信息:"
-    sudo docker --version
-    sudo docker compose version
-    
-    # 运行测试容器
-    log_info "运行测试容器..."
-    if sudo docker run --rm hello-world &> /dev/null; then
-        log_success "Docker测试容器运行成功"
-    else
-        log_error "Docker测试容器运行失败"
+    # 检查Docker socket权限
+    if [[ ! -S /var/run/docker.sock ]]; then
+        log_error "Docker socket不存在"
         return 1
+    fi
+    
+    # 检查当前用户是否在docker组中
+    if ! id -nG "$USER" | grep -qw docker; then
+        log_warning "当前用户不在docker组中，正在添加..."
+        sudo usermod -aG docker $USER
+    fi
+    
+    # 确保Docker socket有正确的权限
+    sudo chmod 666 /var/run/docker.sock
+    
+    # 尝试立即获取docker组权限
+    log_info "尝试激活docker组权限..."
+    
+    # 方法1: 使用newgrp (在子shell中)
+    log_info "可以运行以下命令立即获得Docker权限:"
+    echo "  方法1: newgrp docker"
+    echo "  方法2: sudo chmod 666 /var/run/docker.sock (临时解决)"
+    echo "  方法3: 注销并重新登录"
+    
+    log_success "权限修复完成"
+}
+
+# 测试Docker权限
+test_docker_permissions() {
+    log_info "测试Docker权限..."
+    
+    # 首先尝试不使用sudo
+    if docker ps &> /dev/null; then
+        log_success "Docker权限正常"
+        return 0
+    else
+        log_warning "Docker权限不足，尝试修复..."
+        
+        # 临时修复权限
+        sudo chmod 666 /var/run/docker.sock
+        
+        if docker ps &> /dev/null; then
+            log_success "Docker权限修复成功（临时）"
+            log_warning "建议注销重新登录以获得永久权限"
+            return 0
+        else
+            log_error "Docker权限修复失败"
+            return 1
+        fi
     fi
 }
 
@@ -180,6 +254,25 @@ show_post_install_info() {
     log_success "Docker安装完成！"
     log_success "============================================"
     echo
+    
+    # 检查当前是否有Docker权限
+    if docker ps &> /dev/null; then
+        log_success "✅ Docker权限配置正常，可以直接使用"
+        echo "  测试命令: docker run hello-world"
+    else
+        log_warning "⚠️  需要激活Docker权限，请选择以下方法之一:"
+        echo
+        echo "  方法1 (推荐): 注销并重新登录"
+        echo "  方法2 (立即生效): newgrp docker"
+        echo "  方法3 (临时): sudo chmod 666 /var/run/docker.sock"
+        echo
+        log_info "如果仍有权限问题，运行以下命令:"
+        echo "  sudo usermod -aG docker \$USER"
+        echo "  sudo chmod 666 /var/run/docker.sock"
+        echo "  newgrp docker"
+    fi
+    
+    echo
     log_info "常用命令:"
     echo "  查看Docker版本: docker --version"
     echo "  查看运行的容器: docker ps"
@@ -188,10 +281,9 @@ show_post_install_info() {
     echo "  运行容器: docker run [镜像名]"
     echo "  使用Docker Compose: docker compose [命令]"
     echo
-    log_info "下一步:"
-    echo "  1. 注销并重新登录以使用户组生效"
-    echo "  2. 或者运行: newgrp docker"
-    echo "  3. 测试: docker run hello-world"
+    log_info "故障排除:"
+    echo "  如果遇到权限错误，请运行: newgrp docker"
+    echo "  或者注销重新登录"
     echo
     log_info "文档: https://docs.docker.com/"
 }
@@ -205,9 +297,24 @@ error_handler() {
 
 # 主函数
 main() {
+    # 检查命令行参数
+    if [[ "$1" == "--fix-permissions" || "$1" == "-f" ]]; then
+        echo "=========================================="
+        echo "         Docker 权限修复工具"
+        echo "=========================================="
+        echo
+        fix_docker_permissions
+        test_docker_permissions
+        echo
+        log_info "权限修复完成！现在尝试运行: docker ps"
+        return 0
+    fi
+    
     echo "=========================================="
     echo "    Docker 一键安装脚本 - Ubuntu 24.04"
     echo "=========================================="
+    echo
+    log_info "使用参数 --fix-permissions 或 -f 仅修复权限问题"
     echo
     
     # 设置错误处理
@@ -227,6 +334,7 @@ main() {
     install_docker
     start_docker_service
     add_user_to_docker_group
+    fix_docker_permissions
     verify_installation
     
     show_post_install_info
