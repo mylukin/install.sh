@@ -1,35 +1,4 @@
-# 验证安装
-verify_installation() {
-    log_info "验证Docker安装..."
-    
-    # 检查Docker版本
-    echo "Docker版本信息:"
-    sudo docker --version
-    sudo docker compose version
-    
-    # 检查Docker服务状态
-    if sudo systemctl is-active --quiet docker; then
-        log_success "Docker服务运行正常"
-    else
-        log_error "Docker服务未运行"
-        return 1
-    fi
-    
-    # 测试权限
-    test_docker_permissions
-    
-    # 运行测试容器（优先使用非sudo）
-    log_info "运行测试容器..."
-    if docker run --rm hello-world &> /dev/null 2>&1; then
-        log_success "Docker测试容器运行成功（无需sudo）"
-    elif sudo docker run --rm hello-world &> /dev/null; then
-        log_success "Docker测试容器运行成功（需要sudo）"
-        log_warning "建议解决权限问题以避免使用sudo"
-    else
-        log_error "Docker测试容器运行失败"
-        return 1
-    fi
-}#!/bin/bash
+#!/bin/bash
 
 # Docker 一键安装脚本 - Ubuntu Server 24.04
 # 作者: Claude AI
@@ -238,6 +207,39 @@ test_docker_permissions() {
             log_error "Docker权限修复失败"
             return 1
         fi
+    fi
+}
+
+# 验证安装
+verify_installation() {
+    log_info "验证Docker安装..."
+    
+    # 检查Docker版本
+    echo "Docker版本信息:"
+    sudo docker --version
+    sudo docker compose version
+    
+    # 检查Docker服务状态
+    if sudo systemctl is-active --quiet docker; then
+        log_success "Docker服务运行正常"
+    else
+        log_error "Docker服务未运行"
+        return 1
+    fi
+    
+    # 测试权限
+    test_docker_permissions
+    
+    # 运行测试容器（优先使用非sudo）
+    log_info "运行测试容器..."
+    if docker run --rm hello-world &> /dev/null 2>&1; then
+        log_success "Docker测试容器运行成功（无需sudo）"
+    elif sudo docker run --rm hello-world &> /dev/null; then
+        log_success "Docker测试容器运行成功（需要sudo）"
+        log_warning "建议解决权限问题以避免使用sudo"
+    else
+        log_error "Docker测试容器运行失败"
+        return 1
     fi
 }
 
